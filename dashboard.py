@@ -213,7 +213,7 @@ Write a compelling, personalized cover letter in 3 paragraphs:
 Keep it professional, concise, genuine and under 250 words."""
 
                     response = client.chat.completions.create(
-                        model="llama3-70b-8192",
+                        model="llama-3.3-70b-versatile",
                         messages=[{"role": "user", "content": prompt}],
                         max_tokens=600
                     )
