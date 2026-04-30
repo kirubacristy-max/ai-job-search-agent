@@ -50,7 +50,11 @@ with tab1:
                         with col1:
                             st.success("✅ Match Score: 8/10")
                         with col2:
-                            st.link_button("Apply Now", url=job.get("link", "#")) if job.get("link") and job.get("link") != "N/A" else st.button("Apply Now (No Link)", disabled=True)
+                            link = job.get("link", "N/A")
+                            if link and link != "N/A":
+                                st.link_button("Apply Now", url=link)
+                            else:
+                                st.button("Apply Now", disabled=True)
             else:
                 st.warning("No jobs found. Try different keywords!")
     else:
