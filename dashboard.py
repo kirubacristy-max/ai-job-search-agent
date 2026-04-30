@@ -70,14 +70,61 @@ with tab2:
     if uploaded_file:
         st.success(f"✅ Resume uploaded: {uploaded_file.name}")
         st.info("🤖 AI is parsing your resume...")
+
+        # Read the PDF
+        import fitz  # PyMuPDF
+        import tempfile, os
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(uploaded_file.read())
+            tmp_path = tmp.name
+
+        doc = fitz.open(tmp_path)
+        resume_text = ""
+        for page in doc:
+            resume_text += page.get_text()
+        doc.close()
+        os.unlink(tmp_path)
+
+        # Extract Skills
+        all_skills = [
+            "Python", "SQL", "Java", "JavaScript", "R",
+            "Machine Learning", "Deep Learning", "NLP", "EDA",
+            "LangChain", "CrewAI", "TensorFlow", "PyTorch", "Scikit-learn",
+            "Power BI", "Tableau", "Matplotlib", "Seaborn",
+            "FastAPI", "Django", "Flask", "Streamlit",
+            "MySQL", "PostgreSQL", "MongoDB",
+            "Docker", "AWS", "Azure", "Git",
+            "Pandas", "NumPy", "BeautifulSoup", "Excel"
+        ]
+        found_skills = [s for s in all_skills if s.lower() in resume_text.lower()]
+        prog_skills = [s for s in found_skills if s in ["Python","SQL","Java","JavaScript","R"]]
+        ai_skills = [s for s in found_skills if s in ["Machine Learning","Deep Learning","NLP","LangChain","CrewAI","TensorFlow","PyTorch","Scikit-learn","EDA"]]
+
+        # Detect Experience
+        import re
+        exp_match = re.search(r'(\d+)\+?\s*years?\s*(of\s*)?experience', resume_text.lower())
+        if exp_match:
+            experience = f"{exp_match.group(1)} Years"
+        elif any(w in resume_text.lower() for w in ["fresher","student","pursuing","bachelor","university","college"]):
+            experience = "Fresher / Student"
+        else:
+            experience = "Entry Level"
+
+        # Display Results
         st.markdown("**Extracted Skills:**")
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Programming", "Python, SQL")
+            st.metric("Programming", ", ".join(prog_skills) if prog_skills else "Not found")
         with col2:
-            st.metric("AI/ML", "LangChain, CrewAI")
+            st.metric("AI/ML", ", ".join(ai_skills[:2]) if ai_skills else "Not found")
         with col3:
-            st.metric("Experience", "4 Months Training")
+            st.metric("Experience", experience)
+
+        # Show all skills
+        if found_skills:
+            st.markdown("**All Detected Skills:**")
+            st.write(", ".join(found_skills))
 
 # Tab 3 - Cover Letters
 with tab3:
