@@ -88,7 +88,7 @@ with tab2:
 
         # Extract Skills
         all_skills = [
-            "Python", "SQL", "Java", "JavaScript", "R",
+            "Python", "SQL", "Java", "JavaScript",
             "Machine Learning", "Deep Learning", "NLP", "EDA",
             "LangChain", "CrewAI", "TensorFlow", "PyTorch", "Scikit-learn",
             "Power BI", "Tableau", "Matplotlib", "Seaborn",
@@ -103,10 +103,16 @@ with tab2:
 
         # Detect Experience
         import re
+
         exp_match = re.search(r'(\d+)\+?\s*years?\s*(of\s*)?experience', resume_text.lower())
+        months_match = re.search(r'(\d+)\s*months?', resume_text.lower())
         if exp_match:
             experience = f"{exp_match.group(1)} Years"
-        elif any(w in resume_text.lower() for w in ["fresher","student","pursuing","bachelor","university","college"]):
+        elif months_match:
+            months = int(months_match.group(1))
+            experience = f"{months} Months Training"
+        elif any(w in resume_text.lower() for w in
+                 ["fresher", "student", "pursuing", "bachelor", "university", "college"]):
             experience = "Fresher / Student"
         else:
             experience = "Entry Level"
