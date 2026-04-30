@@ -48,7 +48,7 @@ with tab1:
         with st.spinner("Searching real jobs..."):
             jobs = search_jobs(job_role, location)
             if jobs:
-                # ✅ Auto-save jobs to database
+                # Auto-save jobs to database
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
                 for job in jobs:
@@ -95,7 +95,6 @@ with tab2:
         st.success(f"✅ Resume uploaded: {uploaded_file.name}")
         st.info("🤖 AI is parsing your resume...")
 
-        # Read the PDF
         import fitz  # PyMuPDF
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -155,34 +154,98 @@ with tab2:
             st.markdown("**All Detected Skills:**")
             st.write(", ".join(found_skills))
 
+        # Save resume skills to session
+        st.session_state['resume_skills'] = ", ".join(found_skills)
+        st.session_state['resume_experience'] = experience
+
 # Tab 3 - Cover Letters
 with tab3:
     st.header("✉️ AI Generated Cover Letters")
-    st.info("Cover letters will appear here after job search!")
 
-    sample_cover = """Dear Hiring Manager at IBM,
+    # Get jobs from database
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, company, location FROM jobs ORDER BY id DESC LIMIT 10")
+    saved_jobs = cursor.fetchall()
+    conn.close()
 
-I am excited to apply for the Python Developer position at IBM. 
-As a motivated Fresher with hands-on project experience and strong skills 
-in AI, Machine Learning, LangChain, and CrewAI, I am confident 
-I can contribute greatly to your team.
+    if not saved_jobs:
+        st.info("🔍 Search for jobs first, then come here to generate cover letters!")
+    else:
+        st.success(f"✅ Found {len(saved_jobs)} saved jobs — select one to generate a cover letter!")
 
-Sincerely,
-Kirubakaran V"""
+        # Job selector
+        job_options = {f"{job[1]} at {job[2]} ({job[3]})": job for job in saved_jobs}
+        selected_job_name = st.selectbox("🎯 Select a job:", list(job_options.keys()))
+        selected_job = job_options[selected_job_name]
 
-    st.text_area("Sample Cover Letter", value=sample_cover, height=200)
-    st.download_button(
-        "⬇️ Download Cover Letter",
-        data=sample_cover,
-        file_name="cover_letter.txt",
-        mime="text/plain"
-    )
+        # Get skills from session or use defaults
+        resume_skills = st.session_state.get(
+            'resume_skills',
+            'Python, SQL, Machine Learning, NLP, Power BI, Data Science'
+        )
+        resume_experience = st.session_state.get('resume_experience', '4 Months Training')
+
+        if st.button("✨ Generate Cover Letter", type="primary"):
+            with st.spinner("🤖 AI is writing your personalized cover letter..."):
+                try:
+                    from groq import Groq
+                    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+                    prompt = f"""Write a professional cover letter for this job application:
+
+Job Title: {selected_job[1]}
+Company: {selected_job[2]}
+Location: {selected_job[3]}
+
+Candidate Profile:
+- Name: Kirubakaran V
+- Skills: {resume_skills}
+- Experience: {resume_experience} at Livewire Salem
+- Education: BSc Physics, Periyar University
+- Projects: RAG Chatbot, IPL Predictor, Movie Recommendation System, Flipkart Scraper
+
+Write a compelling, personalized cover letter in 3 paragraphs:
+1. Introduction — express excitement for this specific role at this company
+2. Relevant skills and projects that match this job
+3. Closing — enthusiasm to contribute and request for interview
+
+Keep it professional, concise, genuine and under 250 words."""
+
+                    response = client.chat.completions.create(
+                        model="llama3-70b-8192",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=600
+                    )
+
+                    cover_letter = response.choices[0].message.content
+                    st.session_state['cover_letter'] = cover_letter
+                    st.session_state['cover_letter_job'] = selected_job_name
+                    st.success("✅ Cover letter generated!")
+
+                except Exception as e:
+                    st.error(f"❌ Error generating cover letter: {e}")
+
+        # Show generated cover letter
+        if 'cover_letter' in st.session_state:
+            st.markdown(f"**📄 Cover Letter for: {st.session_state['cover_letter_job']}**")
+            st.text_area(
+                "Generated Cover Letter",
+                value=st.session_state['cover_letter'],
+                height=350
+            )
+            st.download_button(
+                "⬇️ Download Cover Letter",
+                data=st.session_state['cover_letter'],
+                file_name=f"cover_letter_{selected_job[2].replace(' ', '_')}.txt",
+                mime="text/plain"
+            )
 
 # Tab 4 - Application Tracker
 with tab4:
     st.header("📊 Application Tracker")
 
-    # ✅ Load real jobs from database
+    # Load real jobs from database
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT title, company, location, match_score, status FROM jobs ORDER BY id DESC")
@@ -198,7 +261,6 @@ with tab4:
             "Status": [row[4].capitalize() for row in db_jobs]
         }
     else:
-        # Fallback sample data
         data = {
             "Company": ["IBM", "Infosys", "SAP", "Oracle", "Accenture"],
             "Job Title": ["Python Developer", "Python Developer",
