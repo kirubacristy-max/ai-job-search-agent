@@ -87,12 +87,12 @@ with tab3:
     sample_cover = """Dear Hiring Manager at IBM,
 
 I am excited to apply for the Python Developer position at IBM. 
-With 2 years of experience in Python development and strong skills 
+As a motivated Fresher with hands-on project experience and strong skills 
 in AI, Machine Learning, LangChain, and CrewAI, I am confident 
 I can contribute greatly to your team.
 
 Sincerely,
-John Doe"""
+Kirubakaran V"""
 
     st.text_area("Sample Cover Letter", value=sample_cover, height=200)
     st.download_button(
