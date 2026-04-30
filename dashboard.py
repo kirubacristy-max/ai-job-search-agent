@@ -1,6 +1,10 @@
 import streamlit as st
 import sys
 import os
+import sqlite3
+import re
+import tempfile
+import pandas as pd
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from tools.database_tool import init_db
@@ -15,6 +19,8 @@ st.set_page_config(
 
 # Initialize DB
 init_db()
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "jobs.db")
 
 # Header
 st.title("🚀 AI Job Search Agent")
@@ -42,6 +48,24 @@ with tab1:
         with st.spinner("Searching real jobs..."):
             jobs = search_jobs(job_role, location)
             if jobs:
+                # ✅ Auto-save jobs to database
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                for job in jobs:
+                    cursor.execute(
+                        "SELECT id FROM jobs WHERE title=? AND company=?",
+                        (job['title'], job['company'])
+                    )
+                    if not cursor.fetchone():
+                        cursor.execute('''INSERT INTO jobs
+                            (title, company, location, description, match_score, status)
+                            VALUES (?, ?, ?, ?, ?, ?)''',
+                            (job['title'], job['company'], job['location'],
+                             job.get('description', ''), 8.0, 'found'))
+                conn.commit()
+                conn.close()
+                st.toast("✅ Jobs saved to database!", icon="💾")
+
                 for i, job in enumerate(jobs, 1):
                     with st.expander(f"💼 {i}. {job['title']} at {job['company']}"):
                         st.write(f"📍 **Location:** {job['location']}")
@@ -73,7 +97,6 @@ with tab2:
 
         # Read the PDF
         import fitz  # PyMuPDF
-        import tempfile, os
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_file.read())
@@ -98,12 +121,13 @@ with tab2:
             "Pandas", "NumPy", "BeautifulSoup", "Excel"
         ]
         found_skills = [s for s in all_skills if s.lower() in resume_text.lower()]
-        prog_skills = [s for s in found_skills if s in ["Python","SQL","Java","JavaScript","R"]]
-        ai_skills = [s for s in found_skills if s in ["Machine Learning","Deep Learning","NLP","LangChain","CrewAI","TensorFlow","PyTorch","Scikit-learn","EDA"]]
+        prog_skills = [s for s in found_skills if s in ["Python", "SQL", "Java", "JavaScript"]]
+        ai_skills = [s for s in found_skills if s in [
+            "Machine Learning", "Deep Learning", "NLP", "LangChain",
+            "CrewAI", "TensorFlow", "PyTorch", "Scikit-learn", "EDA"
+        ]]
 
         # Detect Experience
-        import re
-
         exp_match = re.search(r'(\d+)\+?\s*years?\s*(of\s*)?experience', resume_text.lower())
         months_match = re.search(r'(\d+)\s*months?', resume_text.lower())
         if exp_match:
@@ -127,7 +151,6 @@ with tab2:
         with col3:
             st.metric("Experience", experience)
 
-        # Show all skills
         if found_skills:
             st.markdown("**All Detected Skills:**")
             st.write(", ".join(found_skills))
@@ -158,21 +181,37 @@ Kirubakaran V"""
 # Tab 4 - Application Tracker
 with tab4:
     st.header("📊 Application Tracker")
-    import pandas as pd
 
-    data = {
-        "Company": ["IBM", "Infosys", "SAP", "Oracle", "Accenture"],
-        "Job Title": ["Python Developer", "Python Developer",
-                      "Python Developer", "Senior Python Developer",
-                      "Senior Python Developer"],
-        "Match Score": ["8/10", "7.5/10", "7/10", "6/10", "6/10"],
-        "Status": ["Shortlisted", "Applied", "Applied", "Pending", "Pending"]
-    }
+    # ✅ Load real jobs from database
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT title, company, location, match_score, status FROM jobs ORDER BY id DESC")
+    db_jobs = cursor.fetchall()
+    conn.close()
+
+    if db_jobs:
+        data = {
+            "Job Title": [row[0] for row in db_jobs],
+            "Company": [row[1] for row in db_jobs],
+            "Location": [row[2] for row in db_jobs],
+            "Match Score": [f"{row[3]}/10" for row in db_jobs],
+            "Status": [row[4].capitalize() for row in db_jobs]
+        }
+    else:
+        # Fallback sample data
+        data = {
+            "Company": ["IBM", "Infosys", "SAP", "Oracle", "Accenture"],
+            "Job Title": ["Python Developer", "Python Developer",
+                          "Python Developer", "Senior Python Developer",
+                          "Senior Python Developer"],
+            "Match Score": ["8/10", "7.5/10", "7/10", "6/10", "6/10"],
+            "Status": ["Shortlisted", "Applied", "Applied", "Pending", "Pending"]
+        }
 
     df = pd.DataFrame(data)
 
     def color_status(val):
-        if val == "Shortlisted":
+        if val in ["Shortlisted", "Found"]:
             return "background-color: #00ff0033"
         elif val == "Applied":
             return "background-color: #0000ff22"
@@ -185,10 +224,11 @@ with tab4:
         use_container_width=True
     )
 
+    total = len(db_jobs) if db_jobs else 5
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Applied", "5")
+    col1.metric("Total Found", total)
     col2.metric("Shortlisted", "1")
-    col3.metric("Pending", "2")
+    col3.metric("Pending", total - 1)
 
 st.markdown("---")
 st.markdown("Built with ❤️ using Python, CrewAI, LangChain & Streamlit")
