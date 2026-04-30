@@ -77,7 +77,7 @@ with tab2:
         with col2:
             st.metric("AI/ML", "LangChain, CrewAI")
         with col3:
-            st.metric("Experience", "2 Years")
+            st.metric("Experience", "4 Months Training")
 
 # Tab 3 - Cover Letters
 with tab3:
