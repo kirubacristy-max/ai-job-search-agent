@@ -5,6 +5,7 @@ import sqlite3
 import re
 import tempfile
 import pandas as pd
+import threading
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from tools.database_tool import init_db
@@ -34,11 +35,12 @@ location = st.sidebar.text_input("Location", value="Bangalore, India")
 search_btn = st.sidebar.button("🔍 Search Jobs", type="primary")
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔍 Job Listings",
     "📄 Resume Upload",
     "✉️ Cover Letters",
-    "📊 Application Tracker"
+    "📊 Application Tracker",
+    "🤖 Auto Apply"
 ])
 
 # Tab 1 - Job Listings
@@ -48,7 +50,6 @@ with tab1:
         with st.spinner("Searching real jobs..."):
             jobs = search_jobs(job_role, location)
             if jobs:
-                # Auto-save jobs to database
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
                 for job in jobs:
@@ -95,7 +96,7 @@ with tab2:
         st.success(f"✅ Resume uploaded: {uploaded_file.name}")
         st.info("🤖 AI is parsing your resume...")
 
-        import fitz  # PyMuPDF
+        import fitz
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_file.read())
@@ -108,7 +109,6 @@ with tab2:
         doc.close()
         os.unlink(tmp_path)
 
-        # Extract Skills
         all_skills = [
             "Python", "SQL", "Java", "JavaScript",
             "Machine Learning", "Deep Learning", "NLP", "EDA",
@@ -126,7 +126,6 @@ with tab2:
             "CrewAI", "TensorFlow", "PyTorch", "Scikit-learn", "EDA"
         ]]
 
-        # Detect Experience
         exp_match = re.search(r'(\d+)\+?\s*years?\s*(of\s*)?experience', resume_text.lower())
         months_match = re.search(r'(\d+)\s*months?', resume_text.lower())
         if exp_match:
@@ -140,7 +139,6 @@ with tab2:
         else:
             experience = "Entry Level"
 
-        # Display Results
         st.markdown("**Extracted Skills:**")
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -154,7 +152,6 @@ with tab2:
             st.markdown("**All Detected Skills:**")
             st.write(", ".join(found_skills))
 
-        # Save resume skills to session
         st.session_state['resume_skills'] = ", ".join(found_skills)
         st.session_state['resume_experience'] = experience
 
@@ -162,7 +159,6 @@ with tab2:
 with tab3:
     st.header("✉️ AI Generated Cover Letters")
 
-    # Get jobs from database
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT id, title, company, location FROM jobs ORDER BY id DESC LIMIT 10")
@@ -174,12 +170,10 @@ with tab3:
     else:
         st.success(f"✅ Found {len(saved_jobs)} saved jobs — select one to generate a cover letter!")
 
-        # Job selector
         job_options = {f"{job[1]} at {job[2]} ({job[3]})": job for job in saved_jobs}
         selected_job_name = st.selectbox("🎯 Select a job:", list(job_options.keys()))
         selected_job = job_options[selected_job_name]
 
-        # Get skills from session or use defaults
         resume_skills = st.session_state.get(
             'resume_skills',
             'Python, SQL, Machine Learning, NLP, Power BI, Data Science'
@@ -226,7 +220,6 @@ Keep it professional, concise, genuine and under 250 words."""
                 except Exception as e:
                     st.error(f"❌ Error generating cover letter: {e}")
 
-        # Show generated cover letter
         if 'cover_letter' in st.session_state:
             st.markdown(f"**📄 Cover Letter for: {st.session_state['cover_letter_job']}**")
             st.text_area(
@@ -245,7 +238,6 @@ Keep it professional, concise, genuine and under 250 words."""
 with tab4:
     st.header("📊 Application Tracker")
 
-    # Load real jobs from database
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT title, company, location, match_score, status FROM jobs ORDER BY id DESC")
@@ -291,6 +283,55 @@ with tab4:
     col1.metric("Total Found", total)
     col2.metric("Shortlisted", "1")
     col3.metric("Pending", total - 1)
+
+# Tab 5 - Auto Apply
+with tab5:
+    st.header("🤖 Auto Apply")
+    st.info("🚀 Click Apply Now — it opens the job link and marks it as applied in your database!")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, company, location, match_score FROM jobs WHERE status='found' ORDER BY match_score DESC")
+    pending_jobs = cursor.fetchall()
+    conn.close()
+
+    if not pending_jobs:
+        st.warning("⚠️ No pending jobs! Search for jobs first in Job Listings tab.")
+    else:
+        st.success(f"✅ {len(pending_jobs)} jobs ready to apply!")
+
+        for job in pending_jobs:
+            with st.expander(f"💼 {job[1]} at {job[2]} — {job[3]}"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Match Score", f"{job[4]}/10")
+                with col2:
+                    st.metric("Location", job[3])
+                with col3:
+                    st.metric("Status", "Ready ✅")
+
+                if st.button(f"🚀 Apply Now", key=f"apply_{job[0]}"):
+                    with st.spinner(f"Processing application for {job[1]}..."):
+                        try:
+                            from tools.auto_apply_tool import update_job_status
+                            update_job_status(job[1], job[2], "applied")
+                            st.success(f"✅ Applied to {job[1]} at {job[2]}!")
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+
+        st.markdown("---")
+        st.markdown("**📊 Application Summary:**")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status")
+        stats = cursor.fetchall()
+        conn.close()
+
+        if stats:
+            cols = st.columns(len(stats))
+            for i, stat in enumerate(stats):
+                cols[i].metric(stat[0].capitalize(), stat[1])
 
 st.markdown("---")
 st.markdown("Built with ❤️ using Python, CrewAI, LangChain & Streamlit")
