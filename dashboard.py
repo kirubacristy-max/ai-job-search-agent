@@ -35,12 +35,13 @@ location = st.sidebar.text_input("Location", value="Bangalore, India")
 search_btn = st.sidebar.button("🔍 Search Jobs", type="primary")
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🔍 Job Listings",
     "📄 Resume Upload",
     "✉️ Cover Letters",
     "📊 Application Tracker",
-    "🤖 Auto Apply"
+    "🤖 Auto Apply",
+    "🎯 Interview Prep"
 ])
 
 # Tab 1 - Job Listings
@@ -184,7 +185,8 @@ with tab3:
             with st.spinner("🤖 AI is writing your personalized cover letter..."):
                 try:
                     from groq import Groq
-                    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+                    from config import GROQ_API_KEY
+                    client = Groq(api_key=GROQ_API_KEY)
 
                     prompt = f"""Write a professional cover letter for this job application:
 
@@ -332,6 +334,82 @@ with tab5:
             cols = st.columns(len(stats))
             for i, stat in enumerate(stats):
                 cols[i].metric(stat[0].capitalize(), stat[1])
+
+# Tab 6 - Interview Prep
+with tab6:
+    st.header("🎯 Interview Prep — AI Generated Q&A")
+    st.info("🤖 Select a saved job and get 10 AI-generated interview questions with model answers!")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, company, location FROM jobs ORDER BY id DESC LIMIT 10")
+    saved_jobs = cursor.fetchall()
+    conn.close()
+
+    if not saved_jobs:
+        st.warning("⚠️ No saved jobs found! Search for jobs first.")
+    else:
+        job_options = {f"{job[1]} at {job[2]} ({job[3]})": job for job in saved_jobs}
+
+        # FIX 1: key changed from "interview_job" to "interview_selectbox"
+        selected_job_name = st.selectbox("🎯 Select a job to prep for:", list(job_options.keys()), key="interview_selectbox")
+        selected_job = job_options[selected_job_name]
+
+        resume_skills = st.session_state.get(
+            'resume_skills',
+            'Python, SQL, Machine Learning, NLP, Power BI, Data Science'
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**🧠 Skills:** {resume_skills[:80]}...")
+        with col2:
+            if 'resume_experience' in st.session_state:
+                st.markdown(f"**💼 Experience:** {st.session_state['resume_experience']}")
+            else:
+                st.markdown("**💼 Experience:** ⚠️ Upload resume first!")
+
+        resume_experience = st.session_state.get('resume_experience', 'Not specified - please upload resume')
+
+        if st.button("🎯 Generate Interview Questions", type="primary", key="gen_interview"):
+            with st.spinner("🤖 AI is preparing your interview questions..."):
+                try:
+                    from tools.interview_prep_tool import generate_interview_questions, parse_qa_pairs
+
+                    raw = generate_interview_questions(
+                        selected_job[1],
+                        selected_job[2],
+                        resume_skills,
+                        resume_experience
+                    )
+
+                    qa_pairs = parse_qa_pairs(raw)
+                    st.session_state['interview_qa'] = qa_pairs
+                    st.session_state['interview_raw'] = raw
+                    st.session_state['interview_job'] = selected_job_name
+                    st.success(f"✅ Generated {len(qa_pairs)} questions for {selected_job[1]}!")
+
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+
+        if 'interview_qa' in st.session_state and st.session_state['interview_qa']:
+            st.markdown(f"### 📋 Interview Prep: {st.session_state['interview_job']}")
+            st.markdown("---")
+
+            for i, qa in enumerate(st.session_state['interview_qa'], 1):
+                with st.expander(f"❓ Q{i}: {qa['question'][:80]}..."):
+                    st.markdown(f"**Question:** {qa['question']}")
+                    st.markdown("---")
+                    st.markdown("**✅ Model Answer:**")
+                    st.success(qa['answer'])
+
+            st.markdown("---")
+            st.download_button(
+                "⬇️ Download Q&A as Text",
+                data=st.session_state.get('interview_raw', ''),
+                file_name=f"interview_prep_{selected_job[2].replace(' ', '_')}.txt",
+                mime="text/plain"
+            )
 
 st.markdown("---")
 st.markdown("Built with ❤️ using Python, CrewAI, LangChain & Streamlit")
